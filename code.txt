@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Health Navigator</title>
+    <!-- Tailwind CSS is loaded from a CDN for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-dot {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.5;
+            }
+            50% {
+                transform: scale(1.5);
+                opacity: 1;
+            }
+        }
+        .animate-pulse-dot span {
+            animation: pulse-dot 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .animate-pulse-dot span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .animate-pulse-dot span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 font-sans antialiased text-white">
+
+<div class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 md:p-12 max-w-2xl w-full flex flex-col items-center border border-gray-700">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-blue-400 mb-2">AI Health Navigator</h1>
+            <p class="text-gray-400 max-w-md">Get instant, comprehensive details on various health issues powered by the Gemini AI.</p>
+        </div>
+        
+        <div class="w-full flex flex-col md:flex-row items-center gap-4 mb-6">
+            <input
+                type="text"
+                id="healthIssueInput"
+                placeholder="e.g., Asthma, Stroke, Diabetes"
+                class="w-full md:flex-1 p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all duration-200"
+            />
+            <button
+                id="getInfoButton"
+                class="w-full md:w-auto px-6 py-3 rounded-xl font-bold text-white transition-colors duration-200 transform bg-blue-600 hover:bg-blue-700 hover:scale-105 active:scale-95 shadow-lg"
+            >
+                Get Info
+            </button>
+        </div>
+
+        <div class="bg-gray-900 p-6 rounded-xl border border-gray-700 w-full min-h-[250px] flex items-center justify-center overflow-auto shadow-inner text-gray-300">
+            <p id="infoText" class="text-lg leading-relaxed text-center whitespace-pre-wrap">
+                Enter a health issue above and click "Get Info" to learn more!
+            </p>
+        </div>
+
+        <div class="mt-6 text-sm text-gray-500 italic text-center max-w-md">
+            Note: This information is for educational purposes only and should not be considered medical advice.
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const healthIssueInput = document.getElementById('healthIssueInput');
+    const getInfoButton = document.getElementById('getInfoButton');
+    const infoTextElement = document.getElementById('infoText');
+
+    const getHealthInfo = async () => {
+        const healthIssue = healthIssueInput.value.trim();
+
+        if (!healthIssue) {
+            infoTextElement.textContent = 'Please enter a valid health issue.';
+            return;
+        }
+
+        getInfoButton.disabled = true;
+        getInfoButton.classList.add('bg-blue-300', 'cursor-not-allowed');
+        
+        // Add loading indicator
+        infoTextElement.innerHTML = `
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl animate-pulse-dot">.</span>
+                <span class="text-2xl animate-pulse-dot">.</span>
+                <span class="text-2xl animate-pulse-dot">.</span>
+            </div>
+            <p class="mt-2 text-gray-400 italic">Searching for information...</p>
+        `;
+
+        const prompt = `Provide detailed information on the health issue: "${healthIssue}". Please structure your response with clear sections for: 'Curability', 'Prevention', 'Affected Persons', and 'Symptoms'. Provide concise and clear information for each section. If a section is not applicable or information is not available, state that clearly. The information should be presented in a readable, paragraph-like format without markdown headings or lists.`;
+        
+        try {
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: "You are a helpful assistant providing factual health information. Do not give medical advice." }]
+                }
+            };
+            
+            // YOUR API KEY IS ALREADY IN PLACE HERE
+            const apiKey = "AIzaSyC7nbQEGeB0AjFaVwthLaqHrUc2sUKG-Vg"; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            let response;
+            let retries = 0;
+            const maxRetries = 3;
+            const baseDelay = 1000;
+
+            while (retries < maxRetries) {
+                try {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status !== 429) { // 429 is Too Many Requests
+                        break; 
+                    }
+
+                    retries++;
+                    const delay = baseDelay * Math.pow(2, retries);
+                    await new Promise(res => setTimeout(res, delay));
+                } catch (error) {
+                    console.error("Fetch error, retrying:", error);
+                    retries++;
+                    const delay = baseDelay * Math.pow(2, retries);
+                    await new Promise(res => setTimeout(res, delay));
+                }
+            }
+
+            if (response && response.ok) {
+                const result = await response.json();
+                const generatedText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                infoTextElement.textContent = generatedText || "Could not find information. Please try a different query.";
+            } else {
+                infoTextElement.textContent = "Failed to retrieve information. Please check your network and try again.";
+            }
+        } catch (error) {
+            console.error("Error calling Gemini API:", error);
+            infoTextElement.textContent = "An unexpected error occurred. Please try again.";
+        } finally {
+            getInfoButton.disabled = false;
+            getInfoButton.classList.remove('bg-blue-300', 'cursor-not-allowed');
+            infoTextElement.classList.remove('text-gray-400', 'italic');
+        }
+    };
+
+    getInfoButton.addEventListener('click', getHealthInfo);
+    healthIssueInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            getHealthInfo();
+        }
+    });
+});
+</script>
+
+</body>
+</html>
